@@ -211,6 +211,8 @@ export default function Home() {
   const [imageProcessing, setImageProcessing] = useState(false);
   const [cropTarget, setCropTarget] = useState('');
   const [cropPagePreview, setCropPagePreview] = useState('');
+  const [canUndo, setCanUndo] = useState(false);
+  const undoResultRef = useRef<QuestionSet | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const promptRef = useRef<HTMLElement>(null);
   const resultsRef = useRef<HTMLElement>(null);
@@ -221,14 +223,35 @@ export default function Home() {
     () => result?.questions.reduce((sum, question) => sum + (Number(question.points) || 0), 0) || 0,
     [result],
   );
-  const uncroppedImageCount = useMemo(
-    () => result?.questions.filter((question) => question.imageOrigin !== 'manual' && isUncroppedSourceImage(question.sourceImage)).length || 0,
+  const uncroppedQuestionNumbers = useMemo(
+    () => result?.questions.flatMap((question, index) => question.imageOrigin !== 'manual' && isUncroppedSourceImage(question.sourceImage) ? [index + 1] : []) || [],
     [result],
   );
-  const pendingImageCount = useMemo(
-    () => result?.questions.filter((question) => question.sourceImage && !question.imageDataUrl).length || 0,
+  const pendingQuestionNumbers = useMemo(
+    () => result?.questions.flatMap((question, index) => question.sourceImage && !question.imageDataUrl ? [index + 1] : []) || [],
     [result],
   );
+  const uncroppedImageCount = uncroppedQuestionNumbers.length;
+  const pendingImageCount = pendingQuestionNumbers.length;
+
+  function rememberResult() {
+    if (!result) return;
+    undoResultRef.current = result;
+    setCanUndo(true);
+  }
+
+  function undoLastChange() {
+    if (!undoResultRef.current) return;
+    setResult(undoResultRef.current);
+    undoResultRef.current = null;
+    setCanUndo(false);
+    setError('');
+    setWordSuccess('تم التراجع عن آخر تعديل.');
+  }
+
+  function focusQuestion(index: number) {
+    document.getElementById(`question-${result?.questions[index - 1]?.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
 
   function setCount(key: QuestionType, change: number) {
     setCounts((current) => {
@@ -424,6 +447,7 @@ export default function Home() {
     if (!question?.sourceImage) return;
     setImageProcessing(true);
     const refreshed = await renderSourceImage(question);
+    rememberResult();
     setResult((current) => current ? { ...current, questions: current.questions.map((item) => item.id === questionId ? refreshed : item) } : current);
     setImageProcessing(false);
   }
@@ -610,6 +634,8 @@ ${sourceText}`;
     setPrompt(nextPrompt);
     setImportText('');
     setResult(null);
+    undoResultRef.current = null;
+    setCanUndo(false);
     setTimeout(() => promptRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
   }
 
@@ -631,6 +657,8 @@ ${sourceText}`;
       setResult(imported);
       const hydrated = await hydrateSourceImages(imported);
       setResult(hydrated);
+      undoResultRef.current = null;
+      setCanUndo(false);
       setShowAnswers(true);
       setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
     } catch (caught) {
@@ -640,6 +668,7 @@ ${sourceText}`;
   }
 
   function updateQuestion(id: string, patch: Partial<Question>) {
+    rememberResult();
     setResult((current) => current ? { ...current, questions: current.questions.map((item) => item.id === id ? { ...item, ...patch } : item) } : current);
   }
 
@@ -687,6 +716,7 @@ ${sourceText}`;
   }
 
   function removeQuestion(id: string) {
+    rememberResult();
     setResult((current) => current ? { ...current, questions: current.questions.filter((item) => item.id !== id) } : current);
   }
 
@@ -736,7 +766,7 @@ ${sourceText}`;
   function printExam(variant: PrintVariant) {
     if (!result) return;
     if (uncroppedImageCount > 0) {
-      setError(`يوجد ${formatDigits(uncroppedImageCount, numeralStyle)} شكلًا ما زال قصّه يغطي الصفحة كاملة. عدّل الاقتصاص داخل بطاقات الأسئلة أولًا.`);
+      setError(`القص يغطي الصفحة كاملة في الأسئلة: ${uncroppedQuestionNumbers.map((number) => formatDigits(number, numeralStyle)).join('، ')}. عدّل اقتصاصها أولًا.`);
       resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
     }
@@ -757,7 +787,7 @@ ${sourceText}`;
     setError('');
     setWordSuccess('');
     if (uncroppedImageCount > 0) {
-      setError(`تعذر تصدير Word: يوجد ${formatDigits(uncroppedImageCount, numeralStyle)} شكلًا بحدود صفحة كاملة. افتح «تعديل اقتصاص الشكل» وحدد الشكل فقط ثم طبّق القص.`);
+      setError(`تعذر تصدير Word: القص يغطي الصفحة كاملة في الأسئلة: ${uncroppedQuestionNumbers.map((number) => formatDigits(number, numeralStyle)).join('، ')}. افتح أداة الاقتصاص داخلها وحدد الشكل فقط.`);
       resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
     }
@@ -982,8 +1012,9 @@ ${sourceText}`;
               <p><span>اسم الطالب/ة: ........................................</span><span>الزمن: {headerValue(examHeader.duration)}</span><span>الدرجة: ........ / {formatDigits(headerValue(examHeader.totalScore || String(resultTotalScore)), numeralStyle)}</span></p>
             </div>
             <div className="results-header">
-              <div><span className="result-kicker">تم استيراد نتيجة ChatGPT بنجاح</span><input aria-label="عنوان الاختبار" value={result.title} onChange={(event) => setResult({ ...result, title: event.target.value })} /><p>{result.summary}</p></div>
+              <div><span className="result-kicker">تم استيراد نتيجة ChatGPT بنجاح</span><input aria-label="عنوان الاختبار" value={result.title} onChange={(event) => { rememberResult(); setResult({ ...result, title: event.target.value }); }} /><p>{result.summary}</p></div>
               <div className="results-actions">
+                <button className="undo-button" disabled={!canUndo} onClick={undoLastChange} type="button">↶ تراجع عن آخر تعديل</button>
                 <button onClick={() => setShowAnswers((current) => !current)} type="button">{showAnswers ? 'إخفاء الحل' : 'إظهار الحل'}</button>
                 <button onClick={copyAll} type="button">{copied ? 'تم النسخ ✓' : 'نسخ الكل'}</button>
                 <button onClick={downloadText} type="button">تنزيل TXT</button>
@@ -1000,8 +1031,8 @@ ${sourceText}`;
               <span>الدرجة المحسوبة: {formatDigits(resultTotalScore, numeralStyle)}</span>
             </div>
             {wordSuccess && <div className="word-success" role="status">✓ {wordSuccess}</div>}
-            {uncroppedImageCount > 0 && <div className="crop-review-warning" role="alert">⚠ يوجد {formatDigits(uncroppedImageCount, numeralStyle)} شكلًا بحدود صفحة كاملة. لن يسمح المولد بتصديرها قبل قص كل شكل من أداة «تعديل اقتصاص الشكل» داخل السؤال.</div>}
-            {uncroppedImageCount === 0 && pendingImageCount > 0 && <div className="crop-review-warning" role="alert">⚠ طبّق الصفحة والقص على {formatDigits(pendingImageCount, numeralStyle)} شكلًا لمعاينتها قبل التصدير.</div>}
+            {uncroppedImageCount > 0 && <div className="crop-review-warning" role="alert">⚠ يوجد {formatDigits(uncroppedImageCount, numeralStyle)} شكلًا بحدود صفحة كاملة في {uncroppedQuestionNumbers.length === 1 ? 'السؤال' : 'الأسئلة'}: <span className="warning-question-links">{uncroppedQuestionNumbers.map((number) => <button key={number} onClick={() => focusQuestion(number)} type="button">{formatDigits(number, numeralStyle)}</button>)}</span>. اضغط الرقم للانتقال إليه ثم استخدم «تعديل اقتصاص الشكل».</div>}
+            {uncroppedImageCount === 0 && pendingImageCount > 0 && <div className="crop-review-warning" role="alert">⚠ تحتاج الصور إلى تطبيق القص في {pendingQuestionNumbers.length === 1 ? 'السؤال' : 'الأسئلة'}: <span className="warning-question-links">{pendingQuestionNumbers.map((number) => <button key={number} onClick={() => focusQuestion(number)} type="button">{formatDigits(number, numeralStyle)}</button>)}</span>.</div>}
             <p className="pdf-save-note">عند فتح نافذة الطباعة اختر «حفظ بصيغة PDF» لتنزيل الملف.</p>
             {imageProcessing && <div className="image-processing" role="status">جارٍ تجهيز صور الصفحات محليًا…</div>}
             <div className="question-grid">
