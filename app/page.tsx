@@ -131,21 +131,8 @@ function fileKey(file: File) {
   return `${file.name}:${file.size}:${file.lastModified}`;
 }
 
-function normalizePageRange(value: string) {
-  return value
-    .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
-    .replace(/[،؛\s]+/g, ',')
-    .replace(/[–—−]/g, '-')
-    .replace(/^,+|,+$/g, '');
-}
-
-function isValidPageRange(value: string) {
-  if (!value) return true;
-  if (!/^\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$/.test(value)) return false;
-  return value.split(',').every((part) => {
-    const [from, to = from] = part.split('-').map(Number);
-    return from >= 1 && to >= from;
-  });
+function normalizePageNumber(value: string) {
+  return value.replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit))).trim();
 }
 
 function headerValue(value: string) {
@@ -199,7 +186,8 @@ export default function Home() {
   const [source, setSource] = useState<SourceKind>('text');
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
-  const [pageRanges, setPageRanges] = useState<Record<string, string>>({});
+  const [pageFrom, setPageFrom] = useState<Record<string, string>>({});
+  const [pageTo, setPageTo] = useState<Record<string, string>>({});
   const [counts, setCounts] = useState(initialCounts);
   const [difficulty, setDifficulty] = useState<Difficulty>('balanced');
   const [numeralStyle, setNumeralStyle] = useState<NumeralStyle>('arabic_indic');
@@ -518,9 +506,15 @@ export default function Home() {
       setError('خيار إرفاق صور المصدر يحتاج إلى اختيار ملف PDF واحد على الأقل.');
       return;
     }
-    const invalidPdf = files.find((file) => file.type === 'application/pdf' && !isValidPageRange(normalizePageRange(pageRanges[fileKey(file)] || '')));
+    const invalidPdf = files.find((file) => {
+      if (file.type !== 'application/pdf') return false;
+      const from = normalizePageNumber(pageFrom[fileKey(file)] || '');
+      const to = normalizePageNumber(pageTo[fileKey(file)] || '');
+      if (!from && !to) return false;
+      return !/^\d+$/.test(from) || !/^\d+$/.test(to) || Number(from) < 1 || Number(to) < Number(from);
+    });
     if (invalidPdf) {
-      setError(`صيغة الصفحات للملف «${invalidPdf.name}» غير صحيحة. استخدم مثلًا: 1-5، 8، 10-12.`);
+      setError(`نطاق صفحات الملف «${invalidPdf.name}» غير مكتمل أو غير صحيح. أدخل صفحتي البداية والنهاية، ويجب ألا تكون النهاية قبل البداية.`);
       return;
     }
 
@@ -530,7 +524,9 @@ export default function Home() {
       .join('\n');
     const fileList = files.length > 0
       ? files.map((file, index) => {
-          const range = file.type === 'application/pdf' ? normalizePageRange(pageRanges[fileKey(file)] || '') : '';
+          const from = normalizePageNumber(pageFrom[fileKey(file)] || '');
+          const to = normalizePageNumber(pageTo[fileKey(file)] || '');
+          const range = file.type === 'application/pdf' && from && to ? `${from}-${to}` : '';
           return `${index + 1}. ${file.name}${range ? ` — الصفحات المطلوبة فقط: ${range}` : ' — استخدم كامل الملف'}`;
         }).join('\n')
       : 'لا توجد ملفات مرفقة؛ المصدر هو النص المدرج أدناه.';
@@ -836,16 +832,11 @@ ${sourceText}`;
                 <div className={`file-entry ${file.type === 'application/pdf' ? 'has-pages' : ''}`} key={`${file.name}-${index}`}>
                   <div className="file-chip"><span>{file.type.startsWith('image/') ? '▧' : '▤'}</span><div><strong>{file.name}</strong><small>{readableSize(file.size)}</small></div><button aria-label={`إزالة ${file.name}`} onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} type="button">×</button></div>
                   {file.type === 'application/pdf' && (
-                    <label className="page-range-field">
-                      <span>الصفحات المطلوبة <small>اتركها فارغة لاستخدام الكل</small></span>
-                      <input
-                        value={pageRanges[fileKey(file)] || ''}
-                        onChange={(event) => setPageRanges((current) => ({ ...current, [fileKey(file)]: event.target.value }))}
-                        placeholder="مثال: 1-5، 8، 10-12"
-                        inputMode="text"
-                        aria-label={`الصفحات المطلوبة من ${file.name}`}
-                      />
-                    </label>
+                    <fieldset className="page-range-field">
+                      <legend>نطاق صفحات ملف PDF <small>اختياري — اترك الخانتين فارغتين لاستخدام الملف كاملًا</small></legend>
+                      <label><span>من صفحة PDF</span><input value={pageFrom[fileKey(file)] || ''} onChange={(event) => setPageFrom((current) => ({ ...current, [fileKey(file)]: event.target.value }))} placeholder="مثال: 25" inputMode="numeric" aria-label={`من صفحة PDF في ${file.name}`} /></label>
+                      <label><span>إلى صفحة PDF</span><input value={pageTo[fileKey(file)] || ''} onChange={(event) => setPageTo((current) => ({ ...current, [fileKey(file)]: event.target.value }))} placeholder="مثال: 40" inputMode="numeric" aria-label={`إلى صفحة PDF في ${file.name}`} /></label>
+                    </fieldset>
                   )}
                 </div>
               ))}
