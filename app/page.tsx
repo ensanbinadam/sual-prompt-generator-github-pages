@@ -251,8 +251,7 @@ export default function Home() {
     const valid = incoming.filter((file) => {
       const allowed = /\.(pdf|docx|txt|md|png|jpe?g|webp)$/i.test(file.name);
       if (!allowed) setError(`الملف «${file.name}» من نوع غير مدعوم.`);
-      else if (file.size > 15 * 1024 * 1024) setError(`الملف «${file.name}» أكبر من 15 MB.`);
-      return allowed && file.size <= 15 * 1024 * 1024;
+      return allowed;
     });
     setFiles((current) => [...current, ...valid].slice(0, 10));
     if (valid.some((file) => /\.pdf$/i.test(file.name))) setIncludeSourceImages(true);
@@ -507,7 +506,7 @@ export default function Home() {
       return;
     }
     const invalidPdf = files.find((file) => {
-      if (file.type !== 'application/pdf') return false;
+      if (!/\.pdf$/i.test(file.name)) return false;
       const from = normalizePageNumber(pageFrom[fileKey(file)] || '');
       const to = normalizePageNumber(pageTo[fileKey(file)] || '');
       if (!from && !to) return false;
@@ -526,7 +525,7 @@ export default function Home() {
       ? files.map((file, index) => {
           const from = normalizePageNumber(pageFrom[fileKey(file)] || '');
           const to = normalizePageNumber(pageTo[fileKey(file)] || '');
-          const range = file.type === 'application/pdf' && from && to ? `${from}-${to}` : '';
+          const range = /\.pdf$/i.test(file.name) && from && to ? `${from}-${to}` : '';
           return `${index + 1}. ${file.name}${range ? ` — الصفحات المطلوبة فقط: ${range}` : ' — استخدم كامل الملف'}`;
         }).join('\n')
       : 'لا توجد ملفات مرفقة؛ المصدر هو النص المدرج أدناه.';
@@ -821,7 +820,7 @@ ${sourceText}`;
               <button className="drop-zone" type="button" onClick={() => fileInput.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
                 <span className="upload-icon">↥</span>
                 <strong>{source === 'file' ? 'اختر الملفات التي ستُرفقها لاحقًا في ChatGPT' : 'اختر الصور التي ستُرفقها لاحقًا في ChatGPT'}</strong>
-                <small>{source === 'file' ? 'نقرأ أسماء الملفات فقط لبناء البرومبت — ولا نرفعها من جهازك' : 'نقرأ أسماء الصور فقط — وسترفقها أنت في ChatGPT'}</small>
+                <small>{source === 'file' ? 'لا يوجد حد لحجم الكتاب — يبقى الملف على جهازك، وقد يحتاج الكتاب الكبير وقتًا أطول عند عرض صفحاته' : 'نقرأ أسماء الصور فقط — وسترفقها أنت في ChatGPT'}</small>
               </button>
             </>
           )}
@@ -829,9 +828,9 @@ ${sourceText}`;
           {files.length > 0 && (
             <div className="file-list" aria-label="الملفات المختارة">
               {files.map((file, index) => (
-                <div className={`file-entry ${file.type === 'application/pdf' ? 'has-pages' : ''}`} key={`${file.name}-${index}`}>
+                <div className={`file-entry ${/\.pdf$/i.test(file.name) ? 'has-pages' : ''}`} key={`${file.name}-${index}`}>
                   <div className="file-chip"><span>{file.type.startsWith('image/') ? '▧' : '▤'}</span><div><strong>{file.name}</strong><small>{readableSize(file.size)}</small></div><button aria-label={`إزالة ${file.name}`} onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} type="button">×</button></div>
-                  {file.type === 'application/pdf' && (
+                  {/\.pdf$/i.test(file.name) && (
                     <fieldset className="page-range-field">
                       <legend>نطاق صفحات ملف PDF <small>اختياري — اترك الخانتين فارغتين لاستخدام الملف كاملًا</small></legend>
                       <label><span>من صفحة PDF</span><input value={pageFrom[fileKey(file)] || ''} onChange={(event) => setPageFrom((current) => ({ ...current, [fileKey(file)]: event.target.value }))} placeholder="مثال: 25" inputMode="numeric" aria-label={`من صفحة PDF في ${file.name}`} /></label>
