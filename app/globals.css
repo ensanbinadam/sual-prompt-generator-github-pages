@@ -286,6 +286,17 @@ button { cursor: pointer; }
 .crop-error { margin: 0 11px 8px; color: #9a382b; font-size: 9px; line-height: 1.6; }
 .crop-editor.needs-crop { border-color: #df8a52; background: #fffaf5; }
 .crop-editor.needs-crop summary { color: #9a4c22; }
+.visual-crop-button { display: block; width: calc(100% - 22px); margin: 0 11px 10px; border: 1px solid #78b5aa; border-radius: 9px; padding: 9px 11px; color: #fff; background: var(--teal); font-size: 10px; font-weight: 900; cursor: pointer; }
+.visual-crop-button:hover { background: var(--teal-dark); }
+.visual-crop-button:disabled { cursor: wait; opacity: .6; }
+.cropper-panel { display: grid; gap: 9px; margin: 8px 0 12px; padding: 11px; border: 2px solid #68aa9f; border-radius: 12px; background: #eef9f6; }
+.cropper-help { display: grid; gap: 3px; color: var(--teal-dark); line-height: 1.55; }
+.cropper-help strong { font-size: 11px; }
+.cropper-help span { color: var(--muted); font-size: 9px; }
+.cropper-frame { position: relative; width: min(100%, 760px); max-height: 72vh; margin: auto; overflow: auto; border: 2px solid #fff; border-radius: 9px; outline: 1px solid #a9cbc4; background: #dceae7; cursor: crosshair; touch-action: none; user-select: none; }
+.cropper-frame img { display: block; width: 100%; height: auto; pointer-events: none; }
+.crop-selection { position: absolute; z-index: 2; border: 2px solid #087f72; border-radius: 4px; background: rgb(26 165 147 / 16%); box-shadow: 0 0 0 9999px rgb(13 47 43 / 24%); pointer-events: none; }
+.cropper-cancel { justify-self: start; border: 1px solid #bdcfc9; border-radius: 8px; padding: 7px 11px; color: #6a4039; background: #fff; font-size: 9px; font-weight: 900; cursor: pointer; }
 .crop-review-warning { margin: 10px 0; padding: 11px 13px; border: 1px solid #e5a070; border-radius: 11px; background: #fff7ef; color: #823f1f; font-size: 10px; font-weight: 800; line-height: 1.65; }
 .manual-image-tools { margin: -4px 0 12px; border: 1px solid #d6e5e0; border-radius: 10px; background: #f8fcfb; overflow: hidden; }
 .manual-image-tools summary { padding: 8px 10px; color: var(--teal-dark); font-size: 8.5px; font-weight: 900; cursor: pointer; }

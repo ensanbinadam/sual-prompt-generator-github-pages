@@ -2,6 +2,7 @@
 
 import { ChangeEvent, DragEvent, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
+import { FigureCropper, type FigureCrop } from './components/figure-cropper';
 import { MathText } from './components/math-text';
 import { prepareJsonImport } from './lib/json-import';
 import { containsMath, normalizeMathDelimiters } from './lib/math-text';
@@ -220,6 +221,8 @@ export default function Home() {
   const [wordExporting, setWordExporting] = useState<'questions' | 'answers' | null>(null);
   const [wordSuccess, setWordSuccess] = useState('');
   const [imageProcessing, setImageProcessing] = useState(false);
+  const [cropTarget, setCropTarget] = useState('');
+  const [cropPagePreview, setCropPagePreview] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const promptRef = useRef<HTMLElement>(null);
   const resultsRef = useRef<HTMLElement>(null);
@@ -369,20 +372,64 @@ export default function Home() {
     return { ...prepared, questions: nextQuestions };
   }
 
-  async function attachQuestionSourceImage(questionId: string) {
+  async function openVisualCropper(questionId: string) {
     const question = result?.questions.find((item) => item.id === questionId);
     if (!question) return;
     const sourceImage = question.sourceImage || defaultSourceImage(question);
     if (!sourceImage) {
-      setError('أعد اختيار ملف PDF أولًا، ثم أرفق الشكل بالسؤال.');
+      setError('أعد اختيار ملف PDF أولًا، ثم افتح أداة التقاط الرسم.');
       return;
     }
-    const prepared = { ...question, sourceImage, imageDataUrl: undefined, imageError: undefined };
-    updateQuestion(questionId, prepared);
+    const file = findPdfFile(sourceImage.fileName);
+    if (!file) {
+      setError(`أعد اختيار ملف PDF «${sourceImage.fileName}» في أعلى الصفحة.`);
+      return;
+    }
+    setError('');
     setImageProcessing(true);
-    const refreshed = await renderSourceImage(prepared);
-    setResult((current) => current ? { ...current, questions: current.questions.map((item) => item.id === questionId ? refreshed : item) } : current);
-    setImageProcessing(false);
+    try {
+      const { renderPdfFigure } = await import('./lib/pdf-images');
+      const fullPage = await renderPdfFigure(file, { ...sourceImage, crop: { x: 0, y: 0, width: 100, height: 100 } });
+      updateQuestion(questionId, { sourceImage, imageOrigin: 'pdf', imageError: undefined });
+      setCropTarget(questionId);
+      setCropPagePreview(fullPage.dataUrl);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'تعذر عرض صفحة PDF لالتقاط الرسم.');
+    } finally {
+      setImageProcessing(false);
+    }
+  }
+
+  async function applyVisualCrop(questionId: string, crop: FigureCrop) {
+    const question = result?.questions.find((item) => item.id === questionId);
+    if (!question) return;
+    const sourceImage = question.sourceImage || defaultSourceImage(question);
+    if (!sourceImage) return;
+    const file = findPdfFile(sourceImage.fileName);
+    if (!file) {
+      setError(`أعد اختيار ملف PDF «${sourceImage.fileName}» في أعلى الصفحة.`);
+      return;
+    }
+    setImageProcessing(true);
+    try {
+      const { renderPdfFigure } = await import('./lib/pdf-images');
+      const nextSourceImage = { ...sourceImage, crop };
+      const rendered = await renderPdfFigure(file, nextSourceImage);
+      updateQuestion(questionId, {
+        sourceImage: nextSourceImage,
+        imageDataUrl: rendered.dataUrl,
+        imageWidth: rendered.width,
+        imageHeight: rendered.height,
+        imageOrigin: 'pdf',
+        imageError: undefined,
+      });
+      setCropTarget('');
+      setCropPagePreview('');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'تعذر اقتصاص الرسم من صفحة PDF.');
+    } finally {
+      setImageProcessing(false);
+    }
   }
 
   async function refreshQuestionImage(questionId: string) {
@@ -995,19 +1042,23 @@ ${sourceText}`;
                       <small>انسخ الرسم من الملف الأصلي أو التقطه بأداة القص في جهازك، ثم ألصقه هنا. سيحل محل القص الآلي في Word وPDF.</small>
                     </div>
                   </details>
-                  {!question.sourceImage && pdfFiles.length > 0 && (
-                    <button className="attach-source-image" disabled={imageProcessing} onClick={() => attachQuestionSourceImage(question.id)} type="button">＋ إرفاق شكل من ملف PDF بهذا السؤال</button>
-                  )}
-                  {question.sourceImage && question.imageOrigin !== 'manual' && (
+              {!question.sourceImage && pdfFiles.length > 0 && (
+                <button className="attach-source-image" disabled={imageProcessing} onClick={() => openVisualCropper(question.id)} type="button">✂ التقاط شكل من صفحة PDF لهذا السؤال</button>
+              )}
+              {cropTarget === question.id && cropPagePreview && (
+                <FigureCropper src={cropPagePreview} onCapture={(crop) => applyVisualCrop(question.id, crop)} onCancel={() => { setCropTarget(''); setCropPagePreview(''); }} />
+              )}
+              {question.sourceImage && question.imageOrigin !== 'manual' && (
                     <details className={`crop-editor ${isUncroppedSourceImage(question.sourceImage) ? 'needs-crop' : ''}`}>
                       <summary>{isUncroppedSourceImage(question.sourceImage) ? '⚠ اقتصاص مطلوب قبل التصدير' : 'تعديل اقتصاص الشكل'} · الصفحة {formatDigits(question.sourceImage.page, numeralStyle)}</summary>
                       {question.imageError && <p className="crop-error">{question.imageError}</p>}
-                      <div className="source-image-fields">
+                  <div className="source-image-fields">
                         <label><span>ملف PDF</span><select value={question.sourceImage.fileName} onChange={(event) => updateSourceImageMeta(question.id, { fileName: event.target.value })}>{pdfFiles.map((file) => <option key={fileKey(file)} value={file.name}>{file.name}</option>)}</select></label>
                         <label><span>رقم الصفحة</span><input min="1" type="number" value={question.sourceImage.page} onChange={(event) => updateSourceImageMeta(question.id, { page: Math.max(1, Number(event.target.value) || 1) })} /></label>
                         <label className="caption-field"><span>وصف الشكل</span><input value={question.sourceImage.caption} onChange={(event) => updateSourceImageMeta(question.id, { caption: event.target.value })} /></label>
-                      </div>
-                      <div className="crop-sliders">
+                  </div>
+                  <button className="visual-crop-button" disabled={imageProcessing} onClick={() => openVisualCropper(question.id)} type="button">✂ عرض الصفحة وتحديد الرسم بالسحب</button>
+                  <div className="crop-sliders">
                         {(['x', 'y', 'width', 'height'] as const).map((key) => (
                           <label key={key}><span>{key === 'x' ? 'من اليسار' : key === 'y' ? 'من الأعلى' : key === 'width' ? 'العرض' : 'الارتفاع'}: {formatDigits(Math.round(question.sourceImage!.crop[key]), numeralStyle)}٪</span><input type="range" min={key === 'width' || key === 'height' ? 1 : 0} max={100} value={question.sourceImage!.crop[key]} onChange={(event) => updateSourceCrop(question.id, key, Number(event.target.value))} /></label>
                         ))}
